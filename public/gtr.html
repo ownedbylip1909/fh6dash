@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<title>GT-R Telemetry</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; width:100vw; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+canvas { display:block; cursor:pointer; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const VW = 1600, VH = 900, TAU = Math.PI * 2;
+
+function resize() {
+  const s = Math.min(window.innerWidth/VW, window.innerHeight/VH);
+  canvas.width = VW; canvas.height = VH;
+  canvas.style.width = (VW*s)+'px'; canvas.style.height = (VH*s)+'px';
+}
+resize(); window.addEventListener('resize', resize);
+
+const G_START = 150*Math.PI/180, G_SWEEP = 240*Math.PI/180;
+function valAngle(v,mn,mx) { return G_START + Math.max(0,Math.min(1,(v-mn)/(mx-mn)))*G_SWEEP; }
+
+// ── State ──
+let data=null, carDB={}, layout=0;
+
+// ── Utils ──
+function bezel(cx,cy,r,bw=11) {
+  const g=ctx.createLinearGradient(cx-r,cy-r,cx+r,cy+r);
+  g.addColorStop(0,'#6a6a7a'); g.addColorStop(.25,'#ccccdd'); g.addColorStop(.5,'#eeeeee');
+  g.addColorStop(.75,'#aaaabc'); g.addColorStop(1,'#444455');
+  ctx.beginPath(); ctx.arc(cx,cy,r+bw,0,TAU); ctx.fillStyle=g; ctx.fill();
+}
+
+function needle(cx,cy,r,angle,color='#ff1a00',tipR=.83,baseR=.16) {
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(angle+Math.PI/2);
+  ctx.shadowColor=color; ctx.shadowBlur=16;
+  ctx.beginPath();
+  ctx.moveTo(0,r*baseR); ctx.lineTo(-3,r*.05); ctx.lineTo(-2,-r*tipR*.91);
+  ctx.lineTo(0,-r*tipR); ctx.lineTo(2,-r*tipR*.91); ctx.lineTo(3,r*.05);
+  ctx.closePath(); ctx.fillStyle=color; ctx.fill(); ctx.shadowBlur=0;
+  ctx.beginPath(); ctx.arc(0,0,r*.062,0,TAU);
+  const h=ctx.createRadialGradient(0,-r*.015,0,0,0,r*.062);
+  h.addColorStop(0,'#ccc'); h.addColorStop(1,'#2a2a2a');
+  ctx.fillStyle=h; ctx.fill(); ctx.strokeStyle='#555'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.restore();
+}
+
+function neonNeedle(cx,cy,r,angle,color) {
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(angle+Math.PI/2);
+  ctx.shadowColor=color; ctx.shadowBlur=22;
+  ctx.beginPath(); ctx.moveTo(0,r*.14); ctx.lineTo(0,-r*.82);
+  ctx.strokeStyle=color; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0,0,r*.045,0,TAU);
+  ctx.fillStyle=color; ctx.shadowBlur=18; ctx.fill(); ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+function rrect(x,y,w,h,r) {
+  ctx.beginPath(); ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+function txt(x,y,s,sz,col,align='center',weight='400',font='Arial') {
+  ctx.fillStyle=col; ctx.font=`${weight} ${sz}px "${font}",sans-serif`;
+  ctx.textAlign=align; ctx.textBaseline='middle'; ctx.fillText(String(s),x,y);
+}
+
+function fmtLap(s) {
+  if (!s||s<=0) return '--:--.---';
+  const m=Math.floor(s/60),sc=Math.floor(s%60),ms=Math.round((s%1)*1000);
+  return `${m}:${String(sc).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
+}
+
+// ── Shift lights ──
+const SL_N=15, SL_Y=46, SL_W=28, SL_SX=VW/2-((SL_N-1)*SL_W)/2;
+let blinkOn=true; setInterval(()=>{blinkOn=!blinkOn;},90);
+
+function drawShiftLights(rpm,maxRpm) {
+  const ratio=maxRpm>0?rpm/maxRpm:0, blink=ratio>=.97;
+  for (let i=0;i<SL_N;i++) {
+    const x=SL_SX+i*SL_W, on=ratio>=.70+(i/SL_N)*.30;
+    let col=i<5?(on?'#33dd44':'#0a1a0a'):i<10?(on?'#ffdd22':'#1a1600'):(on?'#ff3355':'#1a0808');
+    if (blink) col=blinkOn?'#ff3355':'#1a0808';
+    ctx.beginPath(); ctx.arc(x,SL_Y,10,0,TAU);
+    if (on||blink){ctx.shadowColor=col;ctx.shadowBlur=14;}
+    ctx.fillStyle=col; ctx.fill(); ctx.shadowBlur=0;
+    ctx.strokeStyle='#111'; ctx.lineWidth=1; ctx.stroke();
+  }
+}
+
+// ── Info bar ──
+function drawInfoBar(d) {
+  const bh=54,by=VH-bh;
+  ctx.fillStyle='#06080e'; ctx.fillRect(0,by,VW,bh);
+  ctx.strokeStyle='#14182a'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,by); ctx.lineTo(VW,by); ctx.stroke();
+  const cn=d?(carDB[String(d.carOrdinal)]??`#${d.carOrdinal}`):'--';
+  const cols=[['FAHRZEUG',cn],['LEISTUNG',d?Math.round(d.powerHp)+' PS':'--'],
+    ['DREHM.',d?Math.round(d.torque)+' Nm':'--'],
+    ['0–100',d?.drag?.zeroToHundredTime?d.drag.zeroToHundredTime.toFixed(2)+'s':'--'],
+    ['RUNDE',fmtLap(d?.currentLap)]];
+  const cw=VW/cols.length;
+  cols.forEach(([k,v],i)=>{
+    const x=cw*i+cw/2;
+    txt(x,by+14,k,9,'#2a3445'); txt(x,by+36,v,14,'#88aacc','center','700','SF Mono');
+  });
+}
+
+// ════════════════════════════════════════
+// LAYOUT 0 — GT‑R NISMO
+// ════════════════════════════════════════
+function drawGTR(rpm,rpmMax,speed,boost,gear,d) {
+  // Tacho
+  const T={cx:820,cy:435,r:285};
+  const oR=T.r*.97, iR=T.r*.60, rlAng=valAngle(rpmMax*.875,0,rpmMax);
+  bezel(T.cx,T.cy,T.r,13);
+  ctx.beginPath(); ctx.arc(T.cx,T.cy,T.r,0,TAU); ctx.fillStyle='#080808'; ctx.fill();
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(T.cx,T.cy); ctx.arc(T.cx,T.cy,oR,G_START,G_START+G_SWEEP,false); ctx.closePath();
+  const rg=ctx.createRadialGradient(T.cx,T.cy,iR*.8,T.cx,T.cy,oR);
+  rg.addColorStop(0,'#aa1100'); rg.addColorStop(.4,'#c41800'); rg.addColorStop(1,'#d01c00');
+  ctx.fillStyle=rg; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(T.cx,T.cy); ctx.arc(T.cx,T.cy,oR,rlAng,G_START+G_SWEEP,false); ctx.closePath();
+  ctx.fillStyle='#ff330022'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(T.cx,T.cy,iR,0,TAU); ctx.fillStyle='#080808'; ctx.fill();
+  ctx.beginPath(); ctx.arc(T.cx,T.cy,iR,0,TAU); ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=2; ctx.stroke();
+  for (let i=0;i<=Math.round(rpmMax/200);i++) {
+    const v=i*200, isMaj=v%1000===0, isMed=v%500===0;
+    const a=valAngle(v,0,rpmMax), cos=Math.cos(a), sin=Math.sin(a);
+    const len=isMaj?T.r*.13:(isMed?T.r*.07:T.r*.04);
+    if (oR-len<iR+4) continue;
+    ctx.beginPath(); ctx.moveTo(T.cx+cos*oR,T.cy+sin*oR); ctx.lineTo(T.cx+cos*(oR-len),T.cy+sin*(oR-len));
+    ctx.strokeStyle=v>=rpmMax*.875?'#ffeeaa':'#fff'; ctx.lineWidth=isMaj?2.5:(isMed?1.5:1); ctx.lineCap='round'; ctx.stroke();
+    if (isMaj) txt(T.cx+cos*T.r*.775,T.cy+sin*T.r*.775,v/1000,T.r*.1,v>=rpmMax*.875?'#ffffcc':'#fff','center','700');
+  }
+  txt(T.cx,T.cy-iR*.52,'RPM×1000',T.r*.065,'#ffffff33');
+  ctx.save(); ctx.font=`italic 900 ${T.r*.092}px Arial,sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#cc2200cc'; ctx.shadowColor='#ff330066'; ctx.shadowBlur=8; ctx.fillText('NISMO',T.cx,T.cy-iR*.18); ctx.restore();
+  const pw=iR*1.55,ph=iR*.5,px=T.cx-pw/2,py=T.cy+iR*.22;
+  rrect(px,py,pw,ph,6);
+  const pg=ctx.createLinearGradient(px,py,px,py+ph); pg.addColorStop(0,'#0050ee'); pg.addColorStop(1,'#003ab8');
+  ctx.fillStyle=pg; ctx.fill(); rrect(px,py,pw,ph,6); ctx.strokeStyle='#4488ff44'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.save(); ctx.shadowColor='#88bbff88'; ctx.shadowBlur=8;
+  txt(T.cx,py+ph*.5,Math.round(speed)+' km/h',ph*.44,'#fff','center','700','SF Mono'); ctx.restore();
+  if (d?.currentLap>0) txt(T.cx,py+ph+T.r*.065,fmtLap(d.currentLap),T.r*.065,'#ffffff44','center','400','SF Mono');
+  needle(T.cx,T.cy,T.r,valAngle(Math.max(0,Math.min(rpmMax,rpm)),0,rpmMax));
+
+  // Speedo
+  const S={cx:315,cy:450,r:205};
+  bezel(S.cx,S.cy,S.r,10);
+  ctx.beginPath(); ctx.arc(S.cx,S.cy,S.r,0,TAU);
+  const sfg=ctx.createRadialGradient(S.cx,S.cy-S.r*.1,0,S.cx,S.cy,S.r);
+  sfg.addColorStop(0,'#141414'); sfg.addColorStop(1,'#070707'); ctx.fillStyle=sfg; ctx.fill();
+  ctx.beginPath(); ctx.arc(S.cx,S.cy,S.r-1,0,TAU); ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2; ctx.stroke();
+  for (let v=0;v<=260;v+=5) {
+    const isMaj=v%20===0,isMed=v%10===0;
+    const a=valAngle(v,0,260),cos=Math.cos(a),sin=Math.sin(a),o=S.r*.90,len=isMaj?S.r*.12:(isMed?S.r*.07:S.r*.04);
+    ctx.beginPath(); ctx.moveTo(S.cx+cos*o,S.cy+sin*o); ctx.lineTo(S.cx+cos*(o-len),S.cy+sin*(o-len));
+    ctx.strokeStyle='#999'; ctx.lineWidth=isMaj?2:1; ctx.lineCap='round'; ctx.stroke();
+    if (isMaj&&v%40===0) txt(S.cx+cos*S.r*.75,S.cy+sin*S.r*.75,v,S.r*.09,'#ccc','center','700');
+  }
+  txt(S.cx,S.cy-S.r*.08,Math.round(speed),S.r*.22,'#e0e0e0','center','700','SF Mono');
+  txt(S.cx,S.cy+S.r*.22,'km/h',S.r*.09,'#666');
+  needle(S.cx,S.cy,S.r,valAngle(Math.max(0,Math.min(260,speed)),0,260));
+
+  // Gear badge
+  const G={cx:1285,cy:280,r:118};
+  bezel(G.cx,G.cy,G.r,8);
+  ctx.beginPath(); ctx.arc(G.cx,G.cy,G.r,0,TAU);
+  const gbg=ctx.createRadialGradient(G.cx,G.cy-G.r*.15,G.r*.05,G.cx,G.cy,G.r);
+  gbg.addColorStop(0,'#1a6fff'); gbg.addColorStop(1,'#002fa8'); ctx.fillStyle=gbg; ctx.fill();
+  ctx.beginPath(); ctx.arc(G.cx,G.cy,G.r-3,0,TAU); ctx.strokeStyle='#4488ff33'; ctx.lineWidth=4; ctx.stroke();
+  const gc=gear==='R'?'#ff5577':gear==='N'?'#ffdd66':'#fff';
+  ctx.save(); ctx.shadowColor=gc; ctx.shadowBlur=24; txt(G.cx,G.cy+G.r*.07,gear,G.r*.74,gc,'center','900'); ctx.restore();
+
+  // Boost
+  const B={cx:1285,cy:575,r:150},bMn=-15,bMx=35;
+  bezel(B.cx,B.cy,B.r,9);
+  ctx.beginPath(); ctx.arc(B.cx,B.cy,B.r,0,TAU); ctx.fillStyle='#080808'; ctx.fill();
+  [[bMn,0,'#1a3366aa'],[0,20,'#1a4422aa'],[20,bMx,'#553311aa']].forEach(([a,b,c])=>{
+    ctx.beginPath(); ctx.arc(B.cx,B.cy,B.r*.82,valAngle(a,bMn,bMx),valAngle(b,bMn,bMx),false);
+    ctx.strokeStyle=c; ctx.lineWidth=Math.round(B.r*.09); ctx.lineCap='butt'; ctx.stroke();
+  });
+  for (let v=bMn;v<=bMx;v++) {
+    const isMaj=v%5===0,a=valAngle(v,bMn,bMx),cos=Math.cos(a),sin=Math.sin(a);
+    const o=B.r*.90,len=isMaj?B.r*.12:B.r*.05;
+    ctx.beginPath(); ctx.moveTo(B.cx+cos*o,B.cy+sin*o); ctx.lineTo(B.cx+cos*(o-len),B.cy+sin*(o-len));
+    ctx.strokeStyle='#777'; ctx.lineWidth=isMaj?2:1; ctx.lineCap='round'; ctx.stroke();
+    if (isMaj) txt(B.cx+cos*B.r*.72,B.cy+sin*B.r*.72,v,B.r*.1,'#aaa','center','700');
+  }
+  const za=valAngle(0,bMn,bMx);
+  ctx.beginPath(); ctx.moveTo(B.cx+Math.cos(za)*B.r*.77,B.cy+Math.sin(za)*B.r*.77);
+  ctx.lineTo(B.cx+Math.cos(za)*B.r*.94,B.cy+Math.sin(za)*B.r*.94);
+  ctx.strokeStyle='#ffffffbb'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.stroke();
+  txt(B.cx,B.cy-B.r*.42,'BOOST',B.r*.11,'#777');
+  txt(B.cx,B.cy+B.r*.25,(boost>=0?'+':'')+boost.toFixed(1),B.r*.2,'#aabbdd','center','700','SF Mono');
+  txt(B.cx,B.cy+B.r*.43,'psi',B.r*.1,'#444');
+  needle(B.cx,B.cy,B.r,valAngle(Math.max(bMn,Math.min(bMx,boost)),bMn,bMx));
+}
+
+// ════════════════════════════════════════
+// LAYOUT 1 — MINIMAL
+// ════════════════════════════════════════
+function drawMinimal(rpm,rpmMax,speed,boost,gear,d) {
+  // Giant speed
+  ctx.save(); ctx.shadowColor='#ffffff06'; ctx.shadowBlur=80;
+  txt(VW*.5,VH*.43,Math.round(speed),VH*.37,'#ffffff','center','100','SF Mono'); ctx.restore();
+  txt(VW*.5,VH*.43+VH*.19,'km/h',VH*.043,'#1a1a1a','center','300');
+
+  // Gear
+  const gc=gear==='R'?'#ff4466':gear==='N'?'#ffcc44':'#cc2200';
+  ctx.save(); ctx.shadowColor=gc+'88'; ctx.shadowBlur=40;
+  txt(VW*.83,VH*.44,gear,VH*.30,gc,'center','900'); ctx.restore();
+  txt(VW*.83,VH*.44+VH*.13,'GANG',10,'#1c1c1c');
+
+  // Top stats
+  const cn=d?(carDB[String(d.carOrdinal)]??`#${d.carOrdinal}`):'--';
+  [[(boost>=0?'+':'')+boost.toFixed(1)+' PSI','BOOST'],[cn,'FAHRZEUG'],[d?Math.round(d.powerHp)+' PS':'--','PS']].forEach(([v,k],i)=>{
+    const x=VW*.14+i*(VW*.36);
+    txt(x,34,k,9,'#1a1a1a'); txt(x,55,v,14,'#3a3a3a','center','700','SF Mono');
+  });
+
+  // RPM bar
+  const barY=VH-76,ratio=rpmMax>0?rpm/rpmMax:0;
+  ctx.fillStyle='#0d0d0d'; ctx.fillRect(0,barY,VW,10);
+  const bg=ctx.createLinearGradient(0,0,VW,0);
+  bg.addColorStop(0,'#006622'); bg.addColorStop(.55,'#aacc00'); bg.addColorStop(.78,'#ff7700'); bg.addColorStop(1,'#ff1100');
+  ctx.fillStyle=bg; ctx.fillRect(0,barY,VW*ratio,10);
+  txt(VW-10,barY-14,Math.round(rpm).toLocaleString('de')+' rpm',11,'#2a2a2a','right','400','SF Mono');
+  txt(VW*.5,barY-16,fmtLap(d?.currentLap),13,'#252525','center','400','SF Mono');
+}
+
+// ════════════════════════════════════════
+// LAYOUT 2 — F1 RACING
+// ════════════════════════════════════════
+function f1Panel(x,y,w,h,label,value,color,vsz=42) {
+  rrect(x,y,w,h,4); ctx.fillStyle='#070b12'; ctx.fill();
+  ctx.strokeStyle=color+'28'; ctx.lineWidth=1; rrect(x,y,w,h,4); ctx.stroke();
+  ctx.fillStyle=color; ctx.fillRect(x,y,w,3);
+  txt(x+w/2,y+17,label,10,'#1e2e3e');
+  ctx.save(); ctx.shadowColor=color+'88'; ctx.shadowBlur=10;
+  txt(x+w/2,y+h/2+8,value,vsz,color,'center','700','SF Mono'); ctx.restore();
+}
+
+function drawF1(rpm,rpmMax,speed,boost,gear,d) {
+  ctx.fillStyle='#04070f'; ctx.fillRect(0,0,VW,VH);
+  // LED strip
+  const LN=20,LW=57,LH=34,LG=5,LX=(VW-(LN*(LW+LG)-LG))/2;
+  const ratio=rpmMax>0?rpm/rpmMax:0,blink=ratio>=.97;
+  for (let i=0;i<LN;i++) {
+    const on=ratio>=.60+(i/LN)*.40;
+    let col=i<6?(on?'#00ff55':'#011509'):i<12?(on?'#ffee00':'#131100'):i<16?(on?'#ff5500':'#140800'):(on?'#ff0099':'#120008');
+    if (blink) col=blinkOn?'#ff0099':'#120008';
+    if (on||blink){ctx.shadowColor=col;ctx.shadowBlur=16;}
+    ctx.fillStyle=col; ctx.fillRect(LX+i*(LW+LG),12,LW,LH); ctx.shadowBlur=0;
+  }
+  const cn=d?(carDB[String(d.carOrdinal)]??`#${d.carOrdinal}`):'--';
+  txt(VW*.5,60,cn,12,'#182030','center','400','SF Mono');
+  txt(VW*.72,60,Math.round(rpm).toLocaleString('de')+' RPM',14,'#1a2a3a','center','700','SF Mono');
+  ctx.fillStyle='#0c1520'; ctx.fillRect(0,84,VW,2);
+
+  // Giant gear
+  const gc=gear==='R'?'#ff4466':gear==='N'?'#ffcc00':'#f0f0f0';
+  ctx.save(); ctx.shadowColor=gc+'55'; ctx.shadowBlur=50;
+  txt(VW/2,VH*.46,gear,260,gc,'center','900'); ctx.restore();
+
+  // Panels
+  const PW=320,PH=180,PY=100;
+  f1Panel(55,PY,PW,PH,'SPEED',Math.round(speed)+' km/h','#00ccff',48);
+  f1Panel(VW-55-PW,PY,PW,PH,'LEISTUNG',d?Math.round(d.powerHp)+' PS':'--','#ff8800',44);
+  f1Panel(55,PY+PH+12,PW,PH*.82,'TURBO BOOST',(boost>=0?'+':'')+boost.toFixed(1)+' PSI',boost>2?'#44ff88':'#4488ff',36);
+  f1Panel(VW-55-PW,PY+PH+12,PW,PH*.82,'0–100 km/h',d?.drag?.zeroToHundredTime?d.drag.zeroToHundredTime.toFixed(2)+'s':'--','#ff8844',36);
+
+  // Tire temps
+  if (d) {
+    const TCX=VW/2,TCY=VH*.77;
+    txt(TCX,TCY-68,'REIFENTEMPERATUREN',10,'#0e1825');
+    [[d.tireTempFL,'FL',-80,-44],[d.tireTempFR,'FR',80,-44],[d.tireTempRL,'RL',-80,44],[d.tireTempRR,'RR',80,44]].forEach(([t,lbl,dx,dy])=>{
+      const heat=Math.max(0,Math.min(1,(t-60)/60)),col=`hsl(${(1-heat)*220},70%,55%)`;
+      const x=TCX+dx-54,y=TCY+dy-27,w=108,h=54;
+      rrect(x,y,w,h,4); ctx.fillStyle='#06090f'; ctx.fill();
+      ctx.fillStyle=col; ctx.fillRect(x,y,w,3);
+      txt(TCX+dx,TCY+dy-11,lbl,9,'#1a2e40');
+      txt(TCX+dx,TCY+dy+8,Math.round(t)+'°',18,col,'center','700','SF Mono');
+    });
+  }
+  txt(VW/2,VH-26,fmtLap(d?.currentLap),14,'#182030','center','400','SF Mono');
+}
+
+// ════════════════════════════════════════
+// LAYOUT 3 — NEON JDM
+// ════════════════════════════════════════
+function neonGauge(cx,cy,r,val,mn,mx,label,dispVal,color) {
+  ctx.beginPath(); ctx.arc(cx,cy,r+5,0,TAU); ctx.strokeStyle=color+'18'; ctx.lineWidth=10; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU);
+  const fg=ctx.createRadialGradient(cx,cy-r*.1,0,cx,cy,r);
+  fg.addColorStop(0,'#0c0c0c'); fg.addColorStop(1,'#050505'); ctx.fillStyle=fg; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,r-1,0,TAU); ctx.strokeStyle=color+'22'; ctx.lineWidth=2; ctx.stroke();
+  const t=Math.max(0,Math.min(1,(val-mn)/(mx-mn)));
+  ctx.shadowColor=color; ctx.shadowBlur=18;
+  ctx.beginPath(); ctx.arc(cx,cy,r*.88,G_START,G_START+t*G_SWEEP,false);
+  ctx.strokeStyle=color; ctx.lineWidth=4; ctx.lineCap='round'; ctx.stroke(); ctx.shadowBlur=0;
+  ctx.beginPath(); ctx.arc(cx,cy,r*.88,G_START+t*G_SWEEP,G_START+G_SWEEP,false);
+  ctx.strokeStyle=color+'18'; ctx.lineWidth=4; ctx.stroke();
+  for (let i=0;i<=10;i++) {
+    const a=valAngle(mn+i*(mx-mn)/10,mn,mx),cos=Math.cos(a),sin=Math.sin(a),o=r*.82;
+    ctx.beginPath(); ctx.moveTo(cx+cos*o,cy+sin*o); ctx.lineTo(cx+cos*(o-r*.09),cy+sin*(o-r*.09));
+    ctx.strokeStyle=color+'55'; ctx.lineWidth=1.5; ctx.lineCap='round'; ctx.stroke();
+  }
+  txt(cx,cy-r*.38,label,r*.1,color+'88');
+  ctx.save(); ctx.shadowColor=color; ctx.shadowBlur=14;
+  txt(cx,cy+r*.14,dispVal,r*.2,color,'center','700','SF Mono'); ctx.restore();
+  neonNeedle(cx,cy,r,valAngle(Math.max(mn,Math.min(mx,val)),mn,mx),color);
+}
+
+function drawNeonTacho(cx,cy,r,rpm,rpmMax,gear) {
+  const color='#00ff88',rl=.875;
+  ctx.beginPath(); ctx.arc(cx,cy,r+6,0,TAU); ctx.strokeStyle=color+'12'; ctx.lineWidth=12; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU);
+  const fg=ctx.createRadialGradient(cx,cy-r*.1,0,cx,cy,r);
+  fg.addColorStop(0,'#0c0f0c'); fg.addColorStop(1,'#040604'); ctx.fillStyle=fg; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,r-1,0,TAU); ctx.strokeStyle=color+'18'; ctx.lineWidth=2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r*.88,valAngle(rpmMax*rl,0,rpmMax),G_START+G_SWEEP,false);
+  ctx.strokeStyle='#ff220033'; ctx.lineWidth=8; ctx.lineCap='butt'; ctx.stroke();
+  const t=Math.max(0,Math.min(1,rpm/rpmMax)),arcCol=t>rl?'#ff4400':color;
+  ctx.shadowColor=arcCol; ctx.shadowBlur=20;
+  ctx.beginPath(); ctx.arc(cx,cy,r*.88,G_START,G_START+t*G_SWEEP,false);
+  ctx.strokeStyle=arcCol; ctx.lineWidth=5; ctx.lineCap='round'; ctx.stroke(); ctx.shadowBlur=0;
+  ctx.beginPath(); ctx.arc(cx,cy,r*.88,G_START+t*G_SWEEP,G_START+G_SWEEP,false);
+  ctx.strokeStyle=color+'15'; ctx.lineWidth=5; ctx.stroke();
+  for (let i=0;i<=Math.round(rpmMax/200);i++) {
+    const v=i*200,isMaj=v%1000===0,a=valAngle(v,0,rpmMax),cos=Math.cos(a),sin=Math.sin(a),o=r*.82;
+    ctx.beginPath(); ctx.moveTo(cx+cos*o,cy+sin*o); ctx.lineTo(cx+cos*(o-(isMaj?r*.1:r*.05)),cy+sin*(o-(isMaj?r*.1:r*.05)));
+    ctx.strokeStyle=v>=rpmMax*rl?'#ff440066':color+'44'; ctx.lineWidth=isMaj?1.5:1; ctx.lineCap='round'; ctx.stroke();
+    if (isMaj) txt(cx+cos*r*.70,cy+sin*r*.70,v/1000,r*.085,color+'66','center','400');
+  }
+  const gc=gear==='R'?'#ff4466':gear==='N'?'#ffdd44':color;
+  ctx.save(); ctx.shadowColor=gc; ctx.shadowBlur=28; txt(cx,cy-r*.06,gear,r*.5,gc,'center','900'); ctx.restore();
+  txt(cx,cy-r*.42,'RPM×1000',r*.065,color+'44');
+  txt(cx,cy+r*.5,Math.round(rpm).toLocaleString('de'),r*.1,color+'55','center','400','SF Mono');
+  neonNeedle(cx,cy,r,valAngle(Math.max(0,Math.min(rpmMax,rpm)),0,rpmMax),arcCol);
+}
+
+function drawNeon(rpm,rpmMax,speed,boost,gear,d) {
+  neonGauge(268,468,182,boost,-15,35,'BOOST',(boost>=0?'+':'')+boost.toFixed(1)+' psi','#00ddff');
+  drawNeonTacho(808,440,275,rpm,rpmMax,gear);
+  neonGauge(1338,468,182,speed,0,340,'SPEED',Math.round(speed)+' km/h','#cc44ff');
+  const cn=d?(carDB[String(d.carOrdinal)]??`#${d.carOrdinal}`):'--';
+  [[cn,'FAHRZEUG'],[d?Math.round(d.powerHp)+' PS':'--','PS'],[fmtLap(d?.currentLap),'RUNDE']].forEach(([v,k],i)=>{
+    const x=VW*.28+i*(VW*.22);
+    txt(x,VH-62,k,9,'#112211'); txt(x,VH-42,v,13,'#1a3a1a','center','400','SF Mono');
+  });
+}
+
+// ════════════════════════════════════════
+// Layout Switcher
+// ════════════════════════════════════════
+const LNAMES=['GT·R','MINI','F·1','NEON'];
+let btnBounds=[];
+
+function drawSwitcher() {
+  const bw=64,bh=24,gap=8,total=LNAMES.length*(bw+gap)-gap,sx=VW-total-18,sy=15;
+  btnBounds=LNAMES.map((_,i)=>({x:sx+i*(bw+gap),y:sy,w:bw,h:bh}));
+  LNAMES.forEach((lbl,i)=>{
+    const {x,y,w,h}=btnBounds[i], active=layout===i;
+    rrect(x,y,w,h,4); ctx.fillStyle=active?'#bb1800':'#111'; ctx.fill();
+    ctx.strokeStyle=active?'#ff3300':'#262626'; ctx.lineWidth=1; rrect(x,y,w,h,4); ctx.stroke();
+    txt(x+w/2,y+h/2,lbl,10,active?'#fff':'#444','center','700');
+  });
+}
+
+window.addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=4) layout=n-1; });
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect(),sx=VW/r.width,sy=VH/r.height;
+  const cx=(e.clientX-r.left)*sx,cy=(e.clientY-r.top)*sy;
+  btnBounds.forEach(({x,y,w,h},i)=>{ if(cx>=x&&cx<=x+w&&cy>=y&&cy<=y+h) layout=i; });
+});
+
+// ════════════════════════════════════════
+// Main draw
+// ════════════════════════════════════════
+function draw() {
+  const d=data,rpm=d?.currentEngineRpm??0,rpmMax=d?.engineMaxRpm??8000;
+  const speed=d?.speedKmh??0,boost=d?.boost??0,gr=d?.gear;
+  const gear=gr==null?'-':gr===0?'N':gr===11?'R':String(gr);
+
+  if (layout===2) { ctx.fillStyle='#04070f'; ctx.fillRect(0,0,VW,VH); }
+  else if (layout===1) { ctx.fillStyle='#000'; ctx.fillRect(0,0,VW,VH); }
+  else {
+    ctx.fillStyle='#050505'; ctx.fillRect(0,0,VW,VH);
+    const vig=ctx.createRadialGradient(VW/2,VH/2,VH*.15,VW/2,VH/2,VW*.65);
+    vig.addColorStop(0,'#00000000'); vig.addColorStop(1,'#000000bb');
+    ctx.fillStyle=vig; ctx.fillRect(0,0,VW,VH);
+  }
+
+  if (layout===0||layout===3) drawShiftLights(rpm,rpmMax);
+
+  if      (layout===0) drawGTR(rpm,rpmMax,speed,boost,gear,d);
+  else if (layout===1) drawMinimal(rpm,rpmMax,speed,boost,gear,d);
+  else if (layout===2) drawF1(rpm,rpmMax,speed,boost,gear,d);
+  else                 drawNeon(rpm,rpmMax,speed,boost,gear,d);
+
+  if (layout===0||layout===3) drawInfoBar(d);
+
+  if (!d) {
+    ctx.fillStyle='#ffffff14'; ctx.font=`700 ${VW*.04}px Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('Warte auf Forza Horizon…',VW/2,VH*.5);
+  }
+
+  drawSwitcher();
+  requestAnimationFrame(draw);
+}
+draw();
+
+// ── WebSocket ──
+function connect() {
+  const ws=new WebSocket(`ws://${location.host}`);
+  ws.onopen=()=>console.log('connected');
+  ws.onclose=()=>setTimeout(connect,2000);
+  ws.onmessage=e=>{ const m=JSON.parse(e.data); if(m.type==='cars'){carDB=m.cars;return;} data=m; };
+}
+connect();
+</script>
+</body>
+</html>

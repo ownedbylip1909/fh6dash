@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<title>FH6 Telemetry</title>
+
+<style>
+:root{
+  --bg:#05070c;
+  --surface:#0d1118;
+  --border:#1d2330;
+  --accent:#00d4ff;
+  --accent2:#ff4d6d;
+  --accent3:#39d353;
+  --warn:#ffd166;
+  --text:#e8ecff;
+  --muted:#5f6b85;
+}
+
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:
+    Inter,
+    SF Pro Display,
+    Arial,
+    sans-serif;
+
+  height:100vh;
+
+  overflow:hidden;
+
+  display:grid;
+
+  grid-template-rows:
+    70px
+    1fr
+    90px;
+
+  gap:12px;
+
+  padding:12px;
+}
+
+/* HEADER */
+
+header{
+  background:var(--surface);
+  border:1px solid var(--border);
+
+  border-radius:16px;
+
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+
+  padding:0 22px;
+}
+
+.logo{
+  font-size:13px;
+  font-weight:800;
+  letter-spacing:.3em;
+  color:var(--accent);
+}
+
+.shiftlights{
+  display:flex;
+  gap:6px;
+}
+
+.shift{
+  width:16px;
+  height:16px;
+
+  border-radius:50%;
+
+  background:#1a1f2a;
+
+  transition:.05s;
+}
+
+/* MAIN */
+
+main{
+  display:grid;
+
+  grid-template-columns:
+    260px
+    1fr
+    260px;
+
+  gap:12px;
+
+  min-height:0;
+}
+
+.card{
+  background:var(--surface);
+
+  border:1px solid var(--border);
+
+  border-radius:18px;
+
+  padding:16px;
+
+  display:flex;
+  flex-direction:column;
+
+  overflow:hidden;
+}
+
+.card-title{
+  font-size:11px;
+  letter-spacing:.25em;
+  color:var(--muted);
+
+  margin-bottom:14px;
+}
+
+/* CENTER */
+
+.center{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+
+  position:relative;
+}
+
+.speed{
+  font-size:120px;
+  font-weight:900;
+  letter-spacing:-6px;
+
+  color:var(--accent);
+
+  line-height:1;
+}
+
+.unit{
+  color:var(--muted);
+  letter-spacing:.3em;
+  font-size:12px;
+}
+
+.gear{
+  font-size:56px;
+  font-weight:900;
+
+  color:var(--warn);
+
+  margin-top:12px;
+}
+
+.rpm-wrap{
+  width:100%;
+  margin-top:20px;
+}
+
+.rpm-bar{
+  width:100%;
+  height:28px;
+
+  border-radius:999px;
+
+  overflow:hidden;
+
+  background:#161b25;
+}
+
+.rpm-fill{
+  height:100%;
+  width:0%;
+
+  transition:width .03s linear;
+
+  background:
+    linear-gradient(
+      90deg,
+      #00d4ff,
+      #ffd166,
+      #ff4d6d
+    );
+}
+
+.rpm-text{
+  margin-top:10px;
+  text-align:center;
+
+  color:var(--muted);
+
+  font-size:13px;
+}
+
+/* TRACK */
+
+.track-wrap{
+  flex:1;
+
+  width:100%;
+
+  margin-top:18px;
+
+  border-radius:14px;
+
+  overflow:hidden;
+
+  border:1px solid var(--border);
+
+  background:#050810;
+}
+
+#track{
+  width:100%;
+  height:100%;
+}
+
+/* GFORCE */
+
+#gforce{
+  width:100%;
+  aspect-ratio:1;
+}
+
+/* TIRES */
+
+.tires{
+  display:grid;
+
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:1fr 1fr;
+
+  gap:10px;
+
+  flex:1;
+}
+
+.tire{
+  border-radius:12px;
+
+  background:#10151e;
+
+  border:1px solid var(--border);
+
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+
+  position:relative;
+
+  overflow:hidden;
+}
+
+.tire-fill{
+  position:absolute;
+  inset:auto 0 0 0;
+
+  height:0%;
+
+  transition:.1s;
+}
+
+.tire-label{
+  z-index:2;
+  color:var(--muted);
+  font-size:10px;
+  letter-spacing:.2em;
+}
+
+.tire-temp{
+  z-index:2;
+  font-size:26px;
+  font-weight:800;
+}
+
+/* FOOTER */
+
+footer{
+  display:flex;
+  gap:10px;
+
+  overflow-x:auto;
+}
+
+.stat{
+  min-width:140px;
+
+  background:var(--surface);
+
+  border:1px solid var(--border);
+
+  border-radius:14px;
+
+  padding:12px 16px;
+}
+
+.skey{
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:.2em;
+}
+
+.sval{
+  margin-top:4px;
+
+  font-size:22px;
+  font-weight:800;
+}
+
+/* WHEELSPIN */
+
+#wheelspin{
+  position:fixed;
+
+  top:20px;
+  left:50%;
+
+  transform:translateX(-50%);
+
+  background:#ff003322;
+
+  border:1px solid #ff003388;
+
+  color:#ff4d6d;
+
+  padding:12px 24px;
+
+  border-radius:14px;
+
+  font-weight:900;
+
+  backdrop-filter:blur(10px);
+
+  display:none;
+
+  z-index:999;
+}
+
+/* OVERLAY */
+
+#overlay{
+  position:fixed;
+  inset:0;
+
+  background:#000000dd;
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+
+  gap:14px;
+
+  z-index:9999;
+}
+
+.ov-title{
+  font-size:24px;
+  font-weight:900;
+  color:var(--accent);
+}
+
+.ov-sub{
+  color:var(--muted);
+  text-align:center;
+  line-height:1.8;
+}
+</style>
+</head>
+
+<body>
+
+<div id="wheelspin">
+  WHEELSPIN
+</div>
+
+<div id="overlay">
+  <div class="ov-title">
+    FH6 TELEMETRY
+  </div>
+
+  <div class="ov-sub">
+    Warte auf Daten aus Forza Horizon 6...
+    <br><br>
+    Data Out → ON
+    <br>
+    Format → Car Dash
+    <br>
+    Port → 20777
+  </div>
+</div>
+
+<header>
+  <div class="logo">
+    FH6 TELEMETRY
+  </div>
+
+  <div class="shiftlights" id="shiftlights"></div>
+
+  <div id="status">
+    CONNECTING...
+  </div>
+</header>
+
+<main>
+
+  <div class="card">
+    <div class="card-title">
+      G-FORCE
+    </div>
+
+    <canvas id="gforce"></canvas>
+  </div>
+
+  <div class="card center">
+
+    <div class="speed" id="speed">
+      0
+    </div>
+
+    <div class="unit">
+      KM/H
+    </div>
+
+    <div class="gear" id="gear">
+      N
+    </div>
+
+    <div class="rpm-wrap">
+      <div class="rpm-bar">
+        <div class="rpm-fill" id="rpm-fill"></div>
+      </div>
+
+      <div class="rpm-text" id="rpm-text">
+        0 RPM
+      </div>
+    </div>
+
+    <div class="track-wrap">
+      <canvas id="track"></canvas>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      TIRES
+    </div>
+
+    <div class="tires">
+
+      <div class="tire">
+        <div class="tire-fill" id="fill-fl"></div>
+        <div class="tire-label">VL</div>
+        <div class="tire-temp" id="temp-fl">0°</div>
+      </div>
+
+      <div class="tire">
+        <div class="tire-fill" id="fill-fr"></div>
+        <div class="tire-label">VR</div>
+        <div class="tire-temp" id="temp-fr">0°</div>
+      </div>
+
+      <div class="tire">
+        <div class="tire-fill" id="fill-rl"></div>
+        <div class="tire-label">HL</div>
+        <div class="tire-temp" id="temp-rl">0°</div>
+      </div>
+
+      <div class="tire">
+        <div class="tire-fill" id="fill-rr"></div>
+        <div class="tire-label">HR</div>
+        <div class="tire-temp" id="temp-rr">0°</div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<!-- Name Dialog -->
+<div id="name-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#0d1118;border:1px solid #1d2330;border-radius:16px;padding:24px 28px;min-width:360px;display:flex;flex-direction:column;gap:14px;">
+    <div style="font-size:10px;letter-spacing:.25em;color:#5f6b85;">FAHRZEUGNAME SPEICHERN</div>
+    <div style="font-size:11px;color:#5f6b85;" id="dialog-label">Ordinal #--</div>
+    <input id="name-input" type="text" placeholder="z.B. BMW M4 '21 WP"
+      style="background:#05070c;border:1px solid #1d2330;border-radius:10px;padding:10px 14px;
+             color:#e8ecff;font-family:inherit;font-size:15px;outline:none;width:100%;" />
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeDialog()"
+        style="background:none;border:1px solid #1d2330;border-radius:8px;padding:7px 18px;
+               color:#5f6b85;font-family:inherit;font-size:11px;cursor:pointer;letter-spacing:.1em;">
+        ABBRECHEN
+      </button>
+      <button onclick="saveName()"
+        style="background:#00d4ff18;border:1px solid #00d4ff44;border-radius:8px;padding:7px 18px;
+               color:#00d4ff;font-family:inherit;font-size:11px;cursor:pointer;letter-spacing:.1em;">
+        SPEICHERN
+      </button>
+    </div>
+  </div>
+</div>
+
+<footer>
+
+  <div class="stat" id="car-stat" onclick="openDialog()" style="cursor:pointer;min-width:200px;">
+    <div class="skey">FAHRZEUG ✎</div>
+    <div class="sval" id="car-name" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">--</div>
+    <div style="font-size:10px;color:#2a3040;margin-top:2px;" id="car-ordinal-label"></div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">0-100</div>
+    <div class="sval" id="drag100">--</div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">100-200</div>
+    <div class="sval" id="drag200">--</div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">1/4 MILE</div>
+    <div class="sval" id="quarter">--</div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">POWER</div>
+    <div class="sval" id="power">0 PS</div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">BOOST</div>
+    <div class="sval" id="boost">0 PSI</div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">DRIFT</div>
+    <div class="sval" id="drift">0°</div>
+  </div>
+
+  <div class="stat">
+    <div class="skey">LAUNCH G</div>
+    <div class="sval" id="launchg">0.00</div>
+  </div>
+
+</footer>
+
+<script>
+const shiftWrap =
+  document.getElementById('shiftlights');
+
+const shiftLights = [];
+
+for(let i=0;i<15;i++){
+  const el = document.createElement('div');
+
+  el.className = 'shift';
+
+  shiftWrap.appendChild(el);
+
+  shiftLights.push(el);
+}
+
+function updateShiftLights(rpm,max){
+  const ratio = rpm / max;
+
+  shiftLights.forEach((el,i)=>{
+
+    const t = 0.7 + (i / 15) * 0.3;
+
+    if(ratio >= t){
+
+      if(i < 5){
+        el.style.background='#39d353';
+      }
+      else if(i < 10){
+        el.style.background='#ffd166';
+      }
+      else{
+        el.style.background='#ff4d6d';
+      }
+
+      el.style.boxShadow=
+        `0 0 10px ${el.style.background}`;
+
+    }else{
+      el.style.background='#1a1f2a';
+      el.style.boxShadow='none';
+    }
+
+  });
+}
+
+function tireColor(temp){
+  if(temp < 50) return '#336699';
+  if(temp < 80) return '#39d353';
+  if(temp < 110) return '#ffd166';
+  return '#ff4d6d';
+}
+
+const overlay  = document.getElementById('overlay');
+const wheelspin = document.getElementById('wheelspin');
+
+// ── Car DB ──
+let carDB = {};
+let currentOrdinal = 0;
+
+function updateCarName(ordinal) {
+  if (ordinal === currentOrdinal) return;
+  currentOrdinal = ordinal;
+  const name = carDB[String(ordinal)];
+  const el = document.getElementById('car-name');
+  el.textContent = name ?? `#${ordinal}`;
+  el.style.color = name ? '#e8ecff' : '#5f6b85';
+  document.getElementById('car-ordinal-label').textContent = name ? `#${ordinal}` : '';
+}
+
+function openDialog() {
+  if (!currentOrdinal) return;
+  document.getElementById('dialog-label').textContent = `Ordinal #${currentOrdinal}`;
+  document.getElementById('name-input').value = carDB[String(currentOrdinal)] ?? '';
+  const d = document.getElementById('name-dialog');
+  d.style.display = 'flex';
+  setTimeout(() => document.getElementById('name-input').focus(), 50);
+}
+
+function closeDialog() {
+  document.getElementById('name-dialog').style.display = 'none';
+}
+
+async function saveName() {
+  const name = document.getElementById('name-input').value.trim();
+  if (!name) return;
+  await fetch('/api/cars', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ordinal: currentOrdinal, name }),
+  });
+  closeDialog();
+}
+
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveName();
+  if (e.key === 'Escape') closeDialog();
+});
+
+// ── G-Force ──
+const gfCanvas = document.getElementById('gforce');
+const gfCtx    = gfCanvas.getContext('2d');
+const gfTrail  = [];
+const GF_MAX   = 60;
+
+function drawGForce(lat, lon) {
+  const w = gfCanvas.width, h = gfCanvas.height;
+  const cx = w/2, cy = h/2, r = Math.min(w,h)/2 - 8;
+
+  gfCtx.clearRect(0,0,w,h);
+
+  // rings
+  [1,2].forEach(g => {
+    gfCtx.beginPath();
+    gfCtx.arc(cx, cy, r * g/2.5, 0, Math.PI*2);
+    gfCtx.strokeStyle = '#1d2330';
+    gfCtx.lineWidth = 1;
+    gfCtx.stroke();
+  });
+  // crosshairs
+  gfCtx.strokeStyle = '#1d2330';
+  gfCtx.beginPath(); gfCtx.moveTo(cx-r, cy); gfCtx.lineTo(cx+r, cy); gfCtx.stroke();
+  gfCtx.beginPath(); gfCtx.moveTo(cx, cy-r); gfCtx.lineTo(cx, cy+r); gfCtx.stroke();
+
+  gfTrail.push({x:lat, y:lon});
+  if (gfTrail.length > GF_MAX) gfTrail.shift();
+
+  gfTrail.forEach((p,i) => {
+    const a = i / GF_MAX;
+    const px = cx + (p.x/2.5)*r;
+    const py = cy - (p.y/2.5)*r;
+    gfCtx.beginPath();
+    gfCtx.arc(px, py, 2, 0, Math.PI*2);
+    gfCtx.fillStyle = `rgba(0,212,255,${a*0.5})`;
+    gfCtx.fill();
+  });
+
+  const last = gfTrail[gfTrail.length-1];
+  const dx = cx + (last.x/2.5)*r;
+  const dy = cy - (last.y/2.5)*r;
+  gfCtx.beginPath();
+  gfCtx.arc(dx, dy, 5, 0, Math.PI*2);
+  gfCtx.fillStyle = '#00d4ff';
+  gfCtx.shadowColor = '#00d4ff';
+  gfCtx.shadowBlur = 10;
+  gfCtx.fill();
+  gfCtx.shadowBlur = 0;
+}
+
+function resizeGForce() {
+  const size = gfCanvas.parentElement.clientWidth;
+  gfCanvas.width = size;
+  gfCanvas.height = size;
+}
+resizeGForce();
+window.addEventListener('resize', resizeGForce);
+
+// ── Track Map ──
+const trackCanvas = document.getElementById('track');
+const trackCtx    = trackCanvas.getContext('2d');
+let trackPoints   = [];
+let lastOrdinalTrack = -1;
+
+function resizeTrack() {
+  const el = trackCanvas.parentElement;
+  trackCanvas.width  = el.clientWidth;
+  trackCanvas.height = el.clientHeight;
+}
+resizeTrack();
+window.addEventListener('resize', resizeTrack);
+
+function drawTrack(x, z, ordinal) {
+  if (ordinal !== lastOrdinalTrack && lastOrdinalTrack !== -1) trackPoints = [];
+  lastOrdinalTrack = ordinal;
+
+  trackPoints.push({x, z});
+  if (trackPoints.length > 20000) trackPoints.splice(0, 1000);
+
+  const w = trackCanvas.width, h = trackCanvas.height;
+  if (w < 2 || h < 2 || trackPoints.length < 2) return;
+
+  const xs = trackPoints.map(p=>p.x), zs = trackPoints.map(p=>p.z);
+  const pad = 12;
+  const scale = Math.min(
+    (w-2*pad) / Math.max(Math.max(...xs)-Math.min(...xs), 1),
+    (h-2*pad) / Math.max(Math.max(...zs)-Math.min(...zs), 1)
+  );
+  const minX = Math.min(...xs), minZ = Math.min(...zs);
+  const drawW = (Math.max(...xs)-minX)*scale;
+  const drawH = (Math.max(...zs)-minZ)*scale;
+  const ox = (w-drawW)/2, oz = (h-drawH)/2;
+  const tx = x => ox + (x-minX)*scale;
+  const tz = z => oz + (z-minZ)*scale;
+
+  trackCtx.clearRect(0,0,w,h);
+
+  trackCtx.beginPath();
+  trackCtx.strokeStyle = '#1d2330';
+  trackCtx.lineWidth = 3;
+  trackCtx.lineJoin = 'round';
+  trackPoints.forEach((p,i) => i===0 ? trackCtx.moveTo(tx(p.x),tz(p.z)) : trackCtx.lineTo(tx(p.x),tz(p.z)));
+  trackCtx.stroke();
+
+  const trail = trackPoints.slice(-200);
+  trackCtx.beginPath();
+  trackCtx.strokeStyle = '#00d4ff44';
+  trackCtx.lineWidth = 2;
+  trail.forEach((p,i) => i===0 ? trackCtx.moveTo(tx(p.x),tz(p.z)) : trackCtx.lineTo(tx(p.x),tz(p.z)));
+  trackCtx.stroke();
+
+  const lp = trackPoints[trackPoints.length-1];
+  trackCtx.beginPath();
+  trackCtx.arc(tx(lp.x), tz(lp.z), 4, 0, Math.PI*2);
+  trackCtx.fillStyle = '#00d4ff';
+  trackCtx.shadowColor = '#00d4ff';
+  trackCtx.shadowBlur = 8;
+  trackCtx.fill();
+  trackCtx.shadowBlur = 0;
+}
+
+// ── WebSocket with auto-reconnect ──
+let latestData = null;
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}`);
+
+  ws.onopen = () => {
+    document.getElementById('status').textContent = 'CONNECTED';
+  };
+
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'RECONNECTING...';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'cars') { carDB = msg.cars; return; }
+    latestData = msg;
+  };
+}
+
+connect();
+
+function update(d){
+
+  overlay.style.display='none';
+  updateCarName(d.carOrdinal);
+
+  document.getElementById('speed')
+    .textContent =
+      Math.round(d.speedKmh);
+
+  const gear =
+    d.gear === 0  ? 'N' :
+    d.gear === 11 ? 'R' :
+    String(d.gear);
+
+  document.getElementById('gear')
+    .textContent = gear;
+
+  const rpmRatio =
+    d.currentEngineRpm /
+    d.engineMaxRpm;
+
+  document.getElementById('rpm-fill')
+    .style.width =
+      (rpmRatio * 100) + '%';
+
+  document.getElementById('rpm-text')
+    .textContent =
+      Math.round(d.currentEngineRpm)
+      + ' RPM';
+
+  updateShiftLights(
+    d.currentEngineRpm,
+    d.engineMaxRpm
+  );
+
+  document.getElementById('power')
+    .textContent =
+      Math.round(d.powerHp)
+      + ' PS';
+
+  document.getElementById('boost')
+    .textContent =
+      d.boostPsi.toFixed(1)
+      + ' PSI';
+
+  document.getElementById('drift')
+    .textContent =
+      Math.abs(
+        d.driftAngle * 57.2958
+      ).toFixed(1)
+      + '°';
+
+  document.getElementById('launchg')
+    .textContent =
+      d.launchG.toFixed(2);
+
+  if(d.drag){
+
+    document.getElementById('drag100')
+      .textContent =
+        d.drag.zeroToHundredTime
+          ? d.drag.zeroToHundredTime.toFixed(2)+'s'
+          : '--';
+
+    document.getElementById('drag200')
+      .textContent =
+        d.drag.hundredToTwoHundredTime
+          ? d.drag.hundredToTwoHundredTime.toFixed(2)+'s'
+          : '--';
+
+    document.getElementById('quarter')
+      .textContent =
+        d.drag.quarterMileTime
+          ? d.drag.quarterMileTime.toFixed(3)+'s'
+          : '--';
+  }
+
+  wheelspin.style.display = d.wheelspin ? 'block' : 'none';
+
+  drawGForce(d.gForceLat, d.gForceLon);
+  if (d.positionX !== 0 || d.positionZ !== 0) drawTrack(d.positionX, d.positionZ, d.carOrdinal);
+
+  [
+    ['fl',d.tireTempFL],
+    ['fr',d.tireTempFR],
+    ['rl',d.tireTempRL],
+    ['rr',d.tireTempRR],
+  ].forEach(([id,temp])=>{
+
+    const color =
+      tireColor(temp);
+
+    const fill =
+      document.getElementById(
+        'fill-'+id
+      );
+
+    fill.style.height =
+      Math.min(temp,140)/140*100+'%';
+
+    fill.style.background =
+      color+'44';
+
+    const label =
+      document.getElementById(
+        'temp-'+id
+      );
+
+    label.textContent =
+      Math.round(temp)+'°';
+
+    label.style.color=color;
+  });
+
+}
+
+function loop(){
+
+  if(latestData){
+    update(latestData);
+    latestData = null;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>

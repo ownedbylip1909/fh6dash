@@ -1,0 +1,50 @@
+{
+  "name": "fh6dash",
+  "version": "1.0.0",
+  "description": "Forza Horizon telemetry dashboard for Mac",
+  "author": "Ownedbylip1909",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ownedbylip1909/fh6dash"
+  },
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "electron": "electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "com.nico.fh6dash",
+    "productName": "FH6 Telemetry",
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Ownedbylip1909",
+      "repo": "fh6dash"
+    },
+    "files": [
+      "main.js",
+      "dist/**/*",
+      "public/**/*",
+      "data/**/*",
+      "node_modules/**/*"
+    ]
+  }
+}
