@@ -75,28 +75,78 @@ function createTray() {
   ]));
 }
 
+// ── Update progress window ──
+let updateWin = null;
+
+function showUpdateWindow(version) {
+  if (updateWin) return;
+  updateWin = new BrowserWindow({
+    width: 380,
+    height: 140,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    frame: false,
+    alwaysOnTop: true,
+    backgroundColor: '#080b10',
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
+  });
+
+  updateWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
+    <html><head><style>
+      * { margin:0; padding:0; box-sizing:border-box; font-family: 'SF Pro Display', Arial, sans-serif; }
+      body { background:#080b10; color:#c8d4e8; padding:24px; display:flex; flex-direction:column; gap:14px; -webkit-app-region:drag; }
+      .title { font-size:11px; font-weight:700; letter-spacing:3px; color:#1e2a3a; }
+      .version { font-size:10px; color:#1a2535; letter-spacing:1px; }
+      .bar-wrap { background:#0d1320; border-radius:999px; height:4px; overflow:hidden; }
+      .bar { height:100%; width:0%; background:#0088ff; border-radius:999px; transition:width .3s; }
+      .pct { font-size:10px; color:#1e3050; letter-spacing:1px; font-variant-numeric:tabular-nums; }
+    </style></head>
+    <body>
+      <div class="title">UPDATE WIRD HERUNTERGELADEN</div>
+      <div class="version">v${version}</div>
+      <div class="bar-wrap"><div class="bar" id="bar"></div></div>
+      <div class="pct" id="pct">0 %</div>
+    </body></html>
+  `));
+
+  updateWin.on('closed', () => { updateWin = null; });
+}
+
 // ── Auto updater ──
 function setupUpdater() {
   autoUpdater.checkForUpdatesAndNotify();
 
-  autoUpdater.on('update-available', () => {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update verfügbar',
-      message: 'Eine neue Version wird heruntergeladen.',
-      buttons: ['OK'],
-    });
+  autoUpdater.on('update-available', (info) => {
+    showUpdateWindow(info.version);
   });
 
-  autoUpdater.on('update-downloaded', () => {
+  autoUpdater.on('download-progress', (progress) => {
+    if (!updateWin) return;
+    const pct = Math.round(progress.percent);
+    updateWin.webContents.executeJavaScript(`
+      document.getElementById('bar').style.width = '${pct}%';
+      document.getElementById('pct').textContent = '${pct} %  ·  ${(progress.bytesPerSecond / 1e6).toFixed(1)} MB/s';
+    `).catch(() => {});
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    if (updateWin) { updateWin.close(); updateWin = null; }
     dialog.showMessageBox({
       type: 'info',
       title: 'Update bereit',
-      message: 'Update installiert. App wird neu gestartet.',
+      message: `v${info.version} ist bereit.`,
+      detail: 'Die App wird neu gestartet um das Update zu installieren.',
       buttons: ['Jetzt neu starten', 'Später'],
+      defaultId: 0,
     }).then(({ response }) => {
       if (response === 0) autoUpdater.quitAndInstall();
     });
+  });
+
+  autoUpdater.on('error', (err) => {
+    if (updateWin) { updateWin.close(); updateWin = null; }
+    console.error('Update error:', err.message);
   });
 }
 
