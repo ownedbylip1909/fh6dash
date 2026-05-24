@@ -47,7 +47,12 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL('http://localhost:3000/gtr.html');
+  const load = () => mainWindow && mainWindow.loadURL('http://localhost:3000/gtr.html');
+
+  // Retry if server isn't ready yet
+  mainWindow.webContents.on('did-fail-load', () => setTimeout(load, 500));
+
+  load();
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
