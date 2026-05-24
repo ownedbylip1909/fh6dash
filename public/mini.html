@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<title>Mini · FH6 Telemetry</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; width:100vw; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+canvas { display:block; }
+.back { position:fixed; top:16px; left:82px; color:#181818; font-size:9px; font-family:'SF Mono',monospace; letter-spacing:2px; text-decoration:none; z-index:9; transition:color .2s; }
+.back:hover { color:#555; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← HUB</a>
+<canvas id="c"></canvas>
+<script src="shared.js"></script>
+<script>
+function drawMinimal(rpm, rpmMax, speed, boost, gear, d) {
+  ctx.save(); ctx.shadowColor = '#ffffff06'; ctx.shadowBlur = 80;
+  txt(VW * .5, VH * .43, Math.round(speed), VH * .37, '#ffffff', 'center', '100', 'SF Mono'); ctx.restore();
+  txt(VW * .5, VH * .43 + VH * .19, 'km/h', VH * .043, '#1a1a1a', 'center', '300');
+
+  const gc = gear === 'R' ? '#ff4466' : gear === 'N' ? '#ffcc44' : '#cc2200';
+  ctx.save(); ctx.shadowColor = gc + '88'; ctx.shadowBlur = 40;
+  txt(VW * .83, VH * .44, gear, VH * .30, gc, 'center', '900'); ctx.restore();
+  txt(VW * .83, VH * .44 + VH * .13, 'GANG', 10, '#1c1c1c');
+
+  const cn = d ? (carDB[String(d.carOrdinal)] || ('#' + d.carOrdinal)) : '--';
+  [
+    [(boost >= 0 ? '+' : '') + boost.toFixed(1) + ' PSI', 'BOOST'],
+    [cn, 'FAHRZEUG'],
+    [d ? Math.round(d.powerHp) + ' PS' : '--', 'PS']
+  ].forEach(function(item, i) {
+    const x = VW * .14 + i * (VW * .36);
+    txt(x, 34, item[1], 9, '#1a1a1a'); txt(x, 55, item[0], 14, '#3a3a3a', 'center', '700', 'SF Mono');
+  });
+
+  const barY = VH - 76, ratio = rpmMax > 0 ? rpm / rpmMax : 0;
+  ctx.fillStyle = '#0d0d0d'; ctx.fillRect(0, barY, VW, 10);
+  const bg = ctx.createLinearGradient(0, 0, VW, 0);
+  bg.addColorStop(0, '#006622'); bg.addColorStop(.55, '#aacc00'); bg.addColorStop(.78, '#ff7700'); bg.addColorStop(1, '#ff1100');
+  ctx.fillStyle = bg; ctx.fillRect(0, barY, VW * ratio, 10);
+  txt(VW - 10, barY - 14, Math.round(rpm).toLocaleString('de') + ' rpm', 11, '#2a2a2a', 'right', '400', 'SF Mono');
+  txt(VW * .5, barY - 16, fmtLap(d && d.currentLap), 13, '#252525', 'center', '400', 'SF Mono');
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  canvas = document.getElementById('c');
+  ctx = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+  connect();
+  requestAnimationFrame(loop);
+});
+
+function loop() {
+  const d = data;
+  const rpm = d ? d.currentEngineRpm : 0, rpmMax = d ? d.engineMaxRpm : 8000;
+  const speed = d ? d.speedKmh : 0, boost = d ? d.boost : 0;
+  const gr = d ? d.gear : null;
+  const gear = gr == null ? '-' : gr === 0 ? 'N' : gr === 11 ? 'R' : String(gr);
+
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH);
+  drawMinimal(rpm, rpmMax, speed, boost, gear, d);
+
+  if (!d) {
+    ctx.fillStyle = '#ffffff0e'; ctx.font = '700 ' + (VW * .035) + 'px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Warte auf Forza Horizon…', VW/2, VH*.5);
+  }
+
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>

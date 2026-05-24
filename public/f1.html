@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<title>F1 · FH6 Telemetry</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#04070f; width:100vw; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+canvas { display:block; }
+.back { position:fixed; top:16px; left:82px; color:#0d1520; font-size:9px; font-family:'SF Mono',monospace; letter-spacing:2px; text-decoration:none; z-index:9; transition:color .2s; }
+.back:hover { color:#1e3040; }
+</style>
+</head>
+<body>
+<a href="/" class="back">← HUB</a>
+<canvas id="c"></canvas>
+<script src="shared.js"></script>
+<script>
+function f1Panel(x, y, w, h, label, value, color, vsz) {
+  vsz = vsz || 42;
+  rrect(x, y, w, h, 4); ctx.fillStyle = '#070b12'; ctx.fill();
+  ctx.strokeStyle = color + '28'; ctx.lineWidth = 1; rrect(x, y, w, h, 4); ctx.stroke();
+  ctx.fillStyle = color; ctx.fillRect(x, y, w, 3);
+  txt(x + w/2, y + 17, label, 10, '#1e2e3e');
+  ctx.save(); ctx.shadowColor = color + '88'; ctx.shadowBlur = 10;
+  txt(x + w/2, y + h/2 + 8, value, vsz, color, 'center', '700', 'SF Mono'); ctx.restore();
+}
+
+function drawF1(rpm, rpmMax, speed, boost, gear, d) {
+  ctx.fillStyle = '#04070f'; ctx.fillRect(0, 0, VW, VH);
+  const LN = 20, LW = 57, LH = 34, LG = 5, LX = (VW - (LN * (LW + LG) - LG)) / 2;
+  const ratio = rpmMax > 0 ? rpm / rpmMax : 0, blink = ratio >= .97;
+  for (let i = 0; i < LN; i++) {
+    const on = ratio >= .60 + (i / LN) * .40;
+    let col = i < 6 ? (on ? '#00ff55' : '#011509') : i < 12 ? (on ? '#ffee00' : '#131100') : i < 16 ? (on ? '#ff5500' : '#140800') : (on ? '#ff0099' : '#120008');
+    if (blink) col = blinkOn ? '#ff0099' : '#120008';
+    if (on || blink) { ctx.shadowColor = col; ctx.shadowBlur = 16; }
+    ctx.fillStyle = col; ctx.fillRect(LX + i * (LW + LG), 12, LW, LH); ctx.shadowBlur = 0;
+  }
+  const cn = d ? (carDB[String(d.carOrdinal)] || ('#' + d.carOrdinal)) : '--';
+  txt(VW * .5, 60, cn, 12, '#182030', 'center', '400', 'SF Mono');
+  txt(VW * .72, 60, Math.round(rpm).toLocaleString('de') + ' RPM', 14, '#1a2a3a', 'center', '700', 'SF Mono');
+  ctx.fillStyle = '#0c1520'; ctx.fillRect(0, 84, VW, 2);
+
+  const gc = gear === 'R' ? '#ff4466' : gear === 'N' ? '#ffcc00' : '#f0f0f0';
+  ctx.save(); ctx.shadowColor = gc + '55'; ctx.shadowBlur = 50;
+  txt(VW/2, VH * .46, gear, 260, gc, 'center', '900'); ctx.restore();
+
+  const PW = 320, PH = 180, PY = 100;
+  f1Panel(55, PY, PW, PH, 'SPEED', Math.round(speed) + ' km/h', '#00ccff', 48);
+  f1Panel(VW - 55 - PW, PY, PW, PH, 'LEISTUNG', d ? Math.round(d.powerHp) + ' PS' : '--', '#ff8800', 44);
+  f1Panel(55, PY + PH + 12, PW, PH * .82, 'TURBO BOOST', (boost >= 0 ? '+' : '') + boost.toFixed(1) + ' PSI', boost > 2 ? '#44ff88' : '#4488ff', 36);
+  f1Panel(VW - 55 - PW, PY + PH + 12, PW, PH * .82, '0–100 km/h', d && d.drag && d.drag.zeroToHundredTime ? d.drag.zeroToHundredTime.toFixed(2) + 's' : '--', '#ff8844', 36);
+
+  if (d) {
+    const TCX = VW/2, TCY = VH * .77;
+    txt(TCX, TCY - 68, 'REIFENTEMPERATUREN', 10, '#0e1825');
+    [
+      [d.tireTempFL, 'FL', -80, -44], [d.tireTempFR, 'FR', 80, -44],
+      [d.tireTempRL, 'RL', -80, 44], [d.tireTempRR, 'RR', 80, 44]
+    ].forEach(function(t) {
+      const heat = Math.max(0, Math.min(1, (t[0] - 60) / 60)), col = 'hsl(' + ((1 - heat) * 220) + ',70%,55%)';
+      const x = TCX + t[2] - 54, y = TCY + t[3] - 27, w = 108, h = 54;
+      rrect(x, y, w, h, 4); ctx.fillStyle = '#06090f'; ctx.fill();
+      ctx.fillStyle = col; ctx.fillRect(x, y, w, 3);
+      txt(TCX + t[2], TCY + t[3] - 11, t[1], 9, '#1a2e40');
+      txt(TCX + t[2], TCY + t[3] + 8, Math.round(t[0]) + '°', 18, col, 'center', '700', 'SF Mono');
+    });
+  }
+  txt(VW/2, VH - 26, fmtLap(d && d.currentLap), 14, '#182030', 'center', '400', 'SF Mono');
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  canvas = document.getElementById('c');
+  ctx = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+  connect();
+  requestAnimationFrame(loop);
+});
+
+function loop() {
+  const d = data;
+  const rpm = d ? d.currentEngineRpm : 0, rpmMax = d ? d.engineMaxRpm : 8000;
+  const speed = d ? d.speedKmh : 0, boost = d ? d.boost : 0;
+  const gr = d ? d.gear : null;
+  const gear = gr == null ? '-' : gr === 0 ? 'N' : gr === 11 ? 'R' : String(gr);
+
+  drawF1(rpm, rpmMax, speed, boost, gear, d);
+
+  if (!d) {
+    ctx.fillStyle = '#ffffff0a'; ctx.font = '700 ' + (VW * .035) + 'px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Warte auf Forza Horizon…', VW/2, VH*.5);
+  }
+
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
