@@ -1,11 +1,9 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, shell } = require('electron');
-const { spawn } = require('child_process');
 const path  = require('path');
 const http  = require('http');
 
-let mainWindow   = null;
-let tray         = null;
-let serverProcess = null;
+let mainWindow = null;
+let tray       = null;
 
 // ── Poll until the HTTP server is up ──
 function waitForServer(retries = 40) {
@@ -23,20 +21,13 @@ function waitForServer(retries = 40) {
   });
 }
 
-// ── Start the Node server as a child process ──
+// ── Load server in-process (works in packaged app) ──
 function startServer() {
-  const node = process.execPath; // the Node bundled inside Electron
-
-  serverProcess = spawn(node, [path.join(__dirname, 'dist', 'server.js')], {
-    cwd: __dirname,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env },
-  });
-
-  serverProcess.stdout.on('data', d => process.stdout.write('[server] ' + d));
-  serverProcess.stderr.on('data', d => process.stderr.write('[server] ' + d));
-  serverProcess.on('error', err => console.error('Server error:', err.message));
-  serverProcess.on('exit', code => console.log('Server exited with code', code));
+  try {
+    require(path.join(__dirname, 'dist', 'server.js'));
+  } catch (err) {
+    console.error('Failed to start server:', err.message);
+  }
 }
 
 // ── Create the main window ──
@@ -48,7 +39,7 @@ function createWindow() {
     minHeight: 600,
     title: 'FH6 Telemetry',
     backgroundColor: '#000000',
-    titleBarStyle: 'hiddenInset',   // macOS traffic lights inset
+    titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       nodeIntegration: false,
@@ -58,7 +49,6 @@ function createWindow() {
 
   mainWindow.loadURL('http://localhost:3000/gtr.html');
 
-  // Open any external links in the default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -69,7 +59,6 @@ function createWindow() {
 
 // ── System tray ──
 function createTray() {
-  // 16×16 blank icon — replace with a real PNG for production
   const icon = nativeImage.createEmpty();
   tray = new Tray(icon);
   tray.setToolTip('FH6 Telemetry');
@@ -95,12 +84,7 @@ app.whenReady().then(async () => {
   if (process.platform === 'darwin') createTray();
 });
 
-app.on('before-quit', () => {
-  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
-});
-
 app.on('window-all-closed', () => {
-  // On macOS keep app alive via tray
   if (process.platform !== 'darwin') app.quit();
 });
 
