@@ -17,6 +17,7 @@
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

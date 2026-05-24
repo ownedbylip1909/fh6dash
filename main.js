@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path  = require('path');
 const http  = require('http');
 
@@ -74,6 +75,31 @@ function createTray() {
   ]));
 }
 
+// ── Auto updater ──
+function setupUpdater() {
+  autoUpdater.checkForUpdatesAndNotify();
+
+  autoUpdater.on('update-available', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update verfügbar',
+      message: 'Eine neue Version wird heruntergeladen.',
+      buttons: ['OK'],
+    });
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update bereit',
+      message: 'Update installiert. App wird neu gestartet.',
+      buttons: ['Jetzt neu starten', 'Später'],
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall();
+    });
+  });
+}
+
 // ── App lifecycle ──
 app.whenReady().then(async () => {
   startServer();
@@ -87,6 +113,7 @@ app.whenReady().then(async () => {
 
   createWindow();
   if (process.platform === 'darwin') createTray();
+  if (app.isPackaged) setupUpdater();
 });
 
 app.on('window-all-closed', () => {
