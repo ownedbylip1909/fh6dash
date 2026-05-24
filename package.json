@@ -30,7 +30,7 @@
   "build": {
     "appId": "com.nico.fh6dash",
     "productName": "FH6 Telemetry",
-    "asar": false,
+    "asarUnpack": ["data/**/*"],
     "mac": {
       "target": "dmg",
       "category": "public.app-category.utilities"

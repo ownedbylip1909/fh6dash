@@ -9,7 +9,9 @@ import { parsePacket } from './parser';
 const UDP_PORT = 20777;
 const HTTP_PORT = 3000;
 
-const CARS_FILE = path.join(__dirname, '..', 'data', 'cars.json');
+// In a packaged asar, writable files live in app.asar.unpacked
+const appRoot = __dirname.replace(/[/\\]dist$/, '').replace('app.asar', 'app.asar.unpacked');
+const CARS_FILE = path.join(appRoot, 'data', 'cars.json');
 
 function loadCars(): Record<string, string> {
   try {
